@@ -1510,16 +1510,17 @@ namespace OpenPDF
                 if (pageIdx >= pigDoc.NumberOfPages) return;
                 var page = pigDoc.GetPage(pageIdx + 1); // PdfPig is 1-based
 
-                double pdfW = page.Width;
-                double pdfH = page.Height;
+                var eCropBox = page.CropBox.Bounds;
+                double pdfW = eCropBox.Width;
+                double pdfH = eCropBox.Height;
                 double sx = pdfW / renderW;
                 double sy = pdfH / renderH;
 
                 // Convert canvas rect to PDF coordinates (flip Y - PDF origin is bottom-left)
-                double pdfLeft = canvasBounds.Left * sx;
-                double pdfRight = canvasBounds.Right * sx;
-                double pdfTop = pdfH - (canvasBounds.Top * sy);
-                double pdfBottom = pdfH - (canvasBounds.Bottom * sy);
+                double pdfLeft = canvasBounds.Left * sx + eCropBox.Left;
+                double pdfRight = canvasBounds.Right * sx + eCropBox.Left;
+                double pdfTop = pdfH - (canvasBounds.Top * sy) + eCropBox.Bottom;
+                double pdfBottom = pdfH - (canvasBounds.Bottom * sy) + eCropBox.Bottom;
                 // pdfTop > pdfBottom because of Y flip
                 double pdfMinY = Math.Min(pdfTop, pdfBottom);
                 double pdfMaxY = Math.Max(pdfTop, pdfBottom);
@@ -1712,8 +1713,11 @@ namespace OpenPDF
                 if (pageIdx >= pigDoc.NumberOfPages) return;
                 var page = pigDoc.GetPage(pageIdx + 1);
 
-                double pdfW = page.Width;
-                double pdfH = page.Height;
+                var sCropBox = page.CropBox.Bounds;
+                double sOriginX = sCropBox.Left;
+                double sOriginY = sCropBox.Bottom;
+                double pdfW = sCropBox.Width;
+                double pdfH = sCropBox.Height;
                 double sx = renderW / pdfW;
                 double sy = renderH / pdfH;
 
@@ -1728,7 +1732,7 @@ namespace OpenPDF
                     if (words[i].Text.ToLowerInvariant().Contains(lowerQuery))
                     {
                         var bb = words[i].BoundingBox;
-                        AddSearchHighlight(bb, sx, sy, renderH, pdfH);
+                        AddSearchHighlight(bb, sx, sy, renderH, sOriginX, sOriginY);
                         hitCount++;
                         continue;
                     }
@@ -1751,8 +1755,8 @@ namespace OpenPDF
                                 maxX = Math.Max(maxX, wbb.Right);
                                 maxY = Math.Max(maxY, wbb.Top);
                             }
-                            double cx = minX * sx;
-                            double cy = renderH - (maxY * sy);
+                            double cx = (minX - sOriginX) * sx;
+                            double cy = renderH - ((maxY - sOriginY) * sy);
                             double cw = (maxX - minX) * sx;
                             double ch = (maxY - minY) * sy;
                             var highlightRect = new Rectangle
@@ -1784,10 +1788,10 @@ namespace OpenPDF
             }
         }
 
-        private void AddSearchHighlight(UglyToad.PdfPig.Core.PdfRectangle bb, double sx, double sy, double renderH, double pdfH)
+        private void AddSearchHighlight(UglyToad.PdfPig.Core.PdfRectangle bb, double sx, double sy, double renderH, double originX, double originY)
         {
-            double cx = bb.Left * sx;
-            double cy = renderH - (bb.Top * sy);
+            double cx = (bb.Left - originX) * sx;
+            double cy = renderH - ((bb.Top - originY) * sy);
             double cw = (bb.Right - bb.Left) * sx;
             double ch = (bb.Top - bb.Bottom) * sy;
             var rect = new Rectangle
@@ -1838,16 +1842,20 @@ namespace OpenPDF
                 if (pageIdx >= pigDoc.NumberOfPages) return;
                 var page = pigDoc.GetPage(pageIdx + 1);
 
-                double pdfW = page.Width;
-                double pdfH = page.Height;
+                // Use CropBox bounds to correctly map PDF coordinates to canvas
+                var cropBox = page.CropBox.Bounds;
+                double originX = cropBox.Left;
+                double originY = cropBox.Bottom;
+                double pdfW = cropBox.Width;
+                double pdfH = cropBox.Height;
                 double sxInv = (double)renderW / pdfW; // pdf->canvas
                 double syInv = (double)renderH / pdfH;
 
                 // Convert all words to canvas coordinates upfront
                 var canvasWords = page.GetWords().Select(w =>
                 {
-                    double cx = w.BoundingBox.Left * sxInv;
-                    double cy = renderH - (w.BoundingBox.Top * syInv);
+                    double cx = (w.BoundingBox.Left - originX) * sxInv;
+                    double cy = renderH - ((w.BoundingBox.Top - originY) * syInv);
                     double cw = (w.BoundingBox.Right - w.BoundingBox.Left) * sxInv;
                     double ch = (w.BoundingBox.Top - w.BoundingBox.Bottom) * syInv;
                     return new { Word = w, Rect = new Rect(cx, cy, cw, ch) };
@@ -1856,60 +1864,58 @@ namespace OpenPDF
                 if (canvasWords.Count == 0) { SetStatus("No text found at this position"); return; }
 
                 // Find words on the same line as the click (Y overlap with tolerance)
-                var clickY = canvasPos.Y;
+                double clickY = canvasPos.Y;
+                const double yTol = 5;
                 var lineWords = canvasWords
-                    .Where(cw => clickY >= cw.Rect.Top - 3 && clickY <= cw.Rect.Bottom + 3)
-                    .OrderBy(cw => cw.Rect.Left)  // strictly left-to-right
+                    .Where(cw => clickY >= cw.Rect.Top - yTol && clickY <= cw.Rect.Bottom + yTol)
                     .ToList();
 
                 if (lineWords.Count == 0)
                 {
-                    // Try nearest line within 20px
                     var nearest = canvasWords
                         .OrderBy(cw => Math.Abs((cw.Rect.Top + cw.Rect.Bottom) / 2 - clickY))
                         .First();
                     double nearMidY = (nearest.Rect.Top + nearest.Rect.Bottom) / 2;
                     lineWords = canvasWords
                         .Where(cw => Math.Abs((cw.Rect.Top + cw.Rect.Bottom) / 2 - nearMidY) < 5)
-                        .OrderBy(cw => cw.Rect.Left)
                         .ToList();
                 }
 
-                if (lineWords.Count == 0)
+                // Among same-line words, pick the one closest to the click X
+                var hitWord = lineWords
+                    .OrderBy(cw => Math.Abs((cw.Rect.Left + cw.Rect.Right) / 2 - canvasPos.X))
+                    .FirstOrDefault();
+
+                if (hitWord is null)
                 {
-                    SetStatus("No text line found at this position");
+                    SetStatus("No text found at this position");
                     return;
                 }
 
-                // Compute bounding box in canvas space
-                double cLeft = lineWords.Min(w => w.Rect.Left);
-                double cTop = lineWords.Min(w => w.Rect.Top);
-                double cRight = lineWords.Max(w => w.Rect.Right);
-                double cBottom = lineWords.Max(w => w.Rect.Bottom);
-                double cWidth = cRight - cLeft;
-                double cHeight = cBottom - cTop;
-
-                string lineText = string.Join(" ", lineWords.Select(w => w.Word.Text));
+                double cLeft = hitWord.Rect.Left;
+                double cTop = hitWord.Rect.Top;
+                double cWidth = hitWord.Rect.Width;
+                double cHeight = hitWord.Rect.Height;
+                string wordText = hitWord.Word.Text;
 
                 // Get actual font info from PdfPig letter data
                 double canvasFontSize = cHeight * 0.75; // fallback
                 string fontName = "Segoe UI"; // fallback
-                var firstWord = lineWords.First().Word;
+                bool isBold = false;
+                bool isItalic = false;
                 try
                 {
-                    if (firstWord.Letters.Count > 0)
+                    if (hitWord.Word.Letters.Count > 0)
                     {
-                        var letter = firstWord.Letters[0];
+                        var letter = hitWord.Word.Letters[0];
                         double pdfFontPts = letter.FontSize;
                         canvasFontSize = pdfFontPts * syInv;
 
-                        // Try to get font name from letter
                         string? rawFont = null;
                         try { rawFont = letter.FontName; } catch { }
                         if (string.IsNullOrEmpty(rawFont))
                         {
-                            // Some PdfPig versions use different property paths
-                            try { rawFont = firstWord.FontName; } catch { }
+                            try { rawFont = hitWord.Word.FontName; } catch { }
                         }
                         if (!string.IsNullOrEmpty(rawFont))
                         {
@@ -1917,10 +1923,13 @@ namespace OpenPDF
                             // Strip PDF subset prefix (e.g. "ABCDEF+FontName" -> "FontName")
                             if (fontStr.Contains('+'))
                                 fontStr = fontStr.Substring(fontStr.IndexOf('+') + 1);
-                            // Clean common suffixes
-                            fontStr = fontStr.Replace(",Bold", "").Replace(",Italic", "")
-                                             .Replace("-Bold", "").Replace("-Italic", "")
-                                             .Replace("-Roman", "").Replace("-Regular", "");
+                            // Detect bold/italic before stripping
+                            string lower = fontStr.ToLowerInvariant();
+                            isBold = lower.Contains("bold");
+                            isItalic = lower.Contains("italic") || lower.Contains("oblique");
+                            // Clean common suffixes to get base family name
+                            fontStr = System.Text.RegularExpressions.Regex.Replace(
+                                fontStr, @"[,\-](Bold|Italic|Oblique|Roman|Regular|Medium|Light|Thin|Semi|Demi|Book|Black|Heavy|Extra|Ultra|Condensed|Narrow)+", "");
                             if (!string.IsNullOrWhiteSpace(fontStr))
                                 fontName = fontStr;
                         }
@@ -1928,17 +1937,19 @@ namespace OpenPDF
                 }
                 catch { /* use fallbacks */ }
 
-                // Show editable TextBox over the line
+                // Show editable TextBox over the word
                 var tb = new TextBox
                 {
-                    Text = lineText,
-                    Background = new SolidColorBrush(Color.FromArgb(240, 255, 255, 255)),
+                    Text = wordText,
+                    Background = Brushes.Transparent,
                     Foreground = Brushes.Black,
                     BorderBrush = (SolidColorBrush)FindResource("AccentGreen"),
                     BorderThickness = new Thickness(2),
                     FontFamily = new FontFamily(fontName),
                     FontSize = Math.Max(canvasFontSize, 10),
-                    MinWidth = Math.Max(cWidth + 20, 100),
+                    FontWeight = isBold ? FontWeights.Bold : FontWeights.Normal,
+                    FontStyle = isItalic ? FontStyles.Italic : FontStyles.Normal,
+                    MinWidth = Math.Max(cWidth + 20, 60),
                     Height = Math.Max(cHeight + 12, 24),
                     Padding = new Thickness(2, 0, 2, 0),
                     VerticalContentAlignment = VerticalAlignment.Center,
@@ -1946,11 +1957,13 @@ namespace OpenPDF
                     Tag = new TextEditContext
                     {
                         PageIndex = pageIdx,
-                        OriginalText = lineText,
+                        OriginalText = wordText,
                         CanvasBounds = new Rect(cLeft, cTop, cWidth, cHeight),
                         Position = new Point(cLeft, cTop),
                         FontSize = Math.Max(canvasFontSize, 10),
-                        FontName = fontName
+                        FontName = fontName,
+                        IsBold = isBold,
+                        IsItalic = isItalic
                     }
                 };
                 Canvas.SetLeft(tb, cLeft);
@@ -1998,6 +2011,8 @@ namespace OpenPDF
             public Point Position { get; set; }
             public double FontSize { get; set; }
             public string FontName { get; set; } = "Segoe UI";
+            public bool IsBold { get; set; }
+            public bool IsItalic { get; set; }
         }
 
         private void EditTextBox_KeyDown(object sender, KeyEventArgs e)
@@ -2066,7 +2081,9 @@ namespace OpenPDF
                 NewContent = newText,
                 OriginalContent = ctx.OriginalText,
                 FontSize = ctx.FontSize,
-                FontName = ctx.FontName
+                FontName = ctx.FontName,
+                IsBold = ctx.IsBold,
+                IsItalic = ctx.IsItalic
             };
             AddAnnotation(edit);
             RenderAllAnnotations(ctx.PageIndex);
@@ -2297,6 +2314,8 @@ namespace OpenPDF
                             Foreground = Brushes.Black,
                             FontFamily = new FontFamily(tea.FontName),
                             FontSize = tea.FontSize,
+                            FontWeight = tea.IsBold ? FontWeights.Bold : FontWeights.Normal,
+                            FontStyle = tea.IsItalic ? FontStyles.Italic : FontStyles.Normal,
                             Padding = new Thickness(0)
                         };
                         Canvas.SetLeft(etb, tea.Position.X);
@@ -2685,8 +2704,12 @@ namespace OpenPDF
                             gfx.DrawRectangle(whiteRect,
                                 (tea.OriginalBounds.X - 2) * sx, (tea.OriginalBounds.Y - 2) * sy,
                                 (tea.OriginalBounds.Width + 4) * sx, (tea.OriginalBounds.Height + 4) * sy);
-                            // Draw replacement text
-                            var editFont = new XFont(tea.FontName, tea.FontSize * sy);
+                            // Draw replacement text with original font style
+                            var editFontStyle = XFontStyle.Regular;
+                            if (tea.IsBold && tea.IsItalic) editFontStyle = XFontStyle.BoldItalic;
+                            else if (tea.IsBold) editFontStyle = XFontStyle.Bold;
+                            else if (tea.IsItalic) editFontStyle = XFontStyle.Italic;
+                            var editFont = new XFont(tea.FontName, tea.FontSize * sy, editFontStyle);
                             double ety = tea.Position.Y * sy + tea.FontSize * sy;
                             gfx.DrawString(tea.NewContent, editFont, XBrushes.Black, tea.Position.X * sx, ety);
                             break;

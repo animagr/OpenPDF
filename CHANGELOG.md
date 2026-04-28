@@ -4,6 +4,13 @@ All notable changes to OpenPDF are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-04-28
+
+### Fixed
+- Text editor now edits the clicked word instead of the entire line/sentence
+- Replacement text preserves original font weight (bold) and style (italic) from the PDF
+- Edit TextBox uses transparent background instead of opaque white overlay during editing
+
 ## [1.0.0] - 2026-04-28
 
 ### Added
