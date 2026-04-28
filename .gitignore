@@ -1,0 +1,24 @@
+# Build output
+bin/
+obj/
+*.user
+*.exe
+
+# Visual Studio
+.vs/
+*.suo
+
+# Publish
+publish/
+*.pubxml.user
+
+# Local notes / scratch
+*.odt
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+.claude
+CLAUDE.md
+Plan.md
