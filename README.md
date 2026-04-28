@@ -1,7 +1,7 @@
 # OpenPDF
 
 
-PDF editor. View, annotate, merge, split, edit text, draw, sign, print, flatten, and open password-protected PDFs without an Adobe subscription or a phone-home. Install or run portable. Single Windows EXE, ~6 MB zipped, no runtime install required.
+PDF editor. View, annotate, merge, split, edit text, draw, sign, print, flatten, and open password-protected PDFs without a subscription or a phone-home. Install or run portable. Single Windows EXE, ~6 MB zipped, no runtime install required.
 
 Forked from v1.2.0 of [KillerPDF](https://github.com/SteveTheKiller/KillerPDF) GPLv3 license.
 
