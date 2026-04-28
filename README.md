@@ -29,6 +29,11 @@ Forked from v1.2.0 of [KillerPDF](https://github.com/SteveTheKiller/KillerPDF) G
 - Windows 10 or 11 (x64)
 - No runtime install. Everything needed is inside the EXE (targets .NET Framework 4.8, which ships with every supported Windows release).
 
+## Prereq
+
+.NET 8 SDK (or later) — the build SDK, even though the output targets .NET Framework 4.8
+https://dotnet.microsoft.com/en-us/learn/dotnet/hello-world-tutorial/install
+
 ## Build from source
 
 ```powershell
