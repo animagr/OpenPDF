@@ -49,12 +49,6 @@ Requires the .NET 8 SDK or later to build (even though the output targets .NET F
 
 See [CHANGELOG.md](CHANGELOG.md).
 
-## Why this exists
-
-I hate Adobe. Acrobat is bloated, tries to hijack file associations, wants a subscription to do basic things, and phones home constantly. Most of the "free" alternatives are either ad-riddled, cloud-based, or rebrands of the same PDF engine sold under three different names.
-
-OpenPDF is what I wanted: local-only, portable, no account, no telemetry. The PDF equivalent of Notepad.
-
 ## License
 
 GPLv3. See [LICENSE](LICENSE). If you fork, modify, or redistribute OpenPDF, your version must also be released under GPLv3 with source available. No exceptions for commercial rebrands.
